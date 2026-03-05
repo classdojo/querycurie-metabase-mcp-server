@@ -350,7 +350,7 @@ export function addDatabaseTools(server: any, metabaseClient: MetabaseClient) {
     description: "Execute a native SQL query against a Metabase database - use this for custom data analysis, complex queries, or extracting specific data not available through existing cards",
     metadata: { isEssential: true},
     parameters: z.object({
-      database_id: z.number().describe("The ID of the database to query against"),
+      database_id: z.number().optional().describe("The ID of the database to query against (defaults to 2 = Redshift Analytics)"),
       query: z.string().describe("The SQL query to execute"),
       parameters: z.array(z.object({
         type: z.string().optional().describe("Parameter type (e.g. 'category', 'date')"),
@@ -358,9 +358,10 @@ export function addDatabaseTools(server: any, metabaseClient: MetabaseClient) {
         value: z.unknown().describe("Parameter value"),
       }).passthrough()).optional().describe("Optional query parameters for parameterized queries"),
     }).strict(),
-    execute: async (args: { database_id: number; query: string; parameters?: any[] }) => {
+    execute: async (args: { database_id?: number; query: string; parameters?: any[] }) => {
       try {
-        const result = await metabaseClient.executeQuery(args.database_id, args.query, args.parameters || []);
+        const dbId = args.database_id ?? 2; // Default to Redshift Analytics
+        const result = await metabaseClient.executeQuery(dbId, args.query, args.parameters || []);
         return JSON.stringify(result, null, 2);
       } catch (error) {
         throw new Error(`Failed to execute query on database ${args.database_id}: ${error instanceof Error ? error.message : 'Unknown error'}`);

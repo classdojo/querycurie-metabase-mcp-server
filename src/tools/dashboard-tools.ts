@@ -390,7 +390,7 @@ export function addDashboardTools(server: any, metabaseClient: MetabaseClient) {
   server.addTool({
     name: "add_card_to_dashboard",
     description:
-      "Add an existing card to a dashboard with optional parameter mappings - use this to build comprehensive dashboards by combining multiple visualizations",
+      "Add a card to a dashboard. The dashboard grid is 24 columns wide. Cards default to full width (size_x=24). For side-by-side layout, use size_x=12 with col=0 and col=12.",
     metadata: { isWrite: true },
     parameters: z.object({
       dashboard_id: z.number().describe("The ID of the dashboard"),
@@ -405,8 +405,8 @@ export function addDashboardTools(server: any, metabaseClient: MetabaseClient) {
         .describe("The tab ID to add the card to (for dashboards with tabs)"),
       row: z.number().optional().describe("Row position for the card"),
       col: z.number().optional().describe("Column position for the card"),
-      size_x: z.number().optional().describe("Width of the card"),
-      size_y: z.number().optional().describe("Height of the card"),
+      size_x: z.number().optional().describe("Card width in grid columns (default 24 = full width). Use 12 for half-width side-by-side cards."),
+      size_y: z.number().optional().describe("Card height in grid rows (default 8)"),
       visualization_settings: z
         .object({})
         .passthrough()
@@ -703,7 +703,7 @@ export function addDashboardTools(server: any, metabaseClient: MetabaseClient) {
   server.addTool({
     name: "update_dashboard",
     description:
-      "Update dashboard properties including name, description, parameters, and settings - use this to maintain metadata, reorganize content, or configure sharing",
+      "Update a dashboard YOU created. You can only modify dashboards you own. To modify someone else's dashboard, use copy_dashboard to make your own copy first.",
     metadata: { isWrite: true },
     parameters: z.object({
       dashboard_id: z.number().describe("The ID of the dashboard to update"),
@@ -747,6 +747,16 @@ export function addDashboardTools(server: any, metabaseClient: MetabaseClient) {
     }).strict(),
     execute: async (args: { dashboard_id: number; [key: string]: any }) => {
       try {
+        // Ownership check for update_dashboard
+        const botUserId = parseInt(process.env.METABASE_BOT_USER_ID || '', 10);
+        if (!botUserId) {
+          throw new Error('METABASE_BOT_USER_ID not configured - cannot verify ownership');
+        }
+        const existingDashboard = await metabaseClient.getDashboard(args.dashboard_id);
+        if ((existingDashboard as any).creator_id !== botUserId) {
+          throw new Error(`Cannot modify dashboard ${args.dashboard_id}: owned by user ${(existingDashboard as any).creator_id}, not bot (${botUserId}). Use copy_dashboard to make your own copy.`);
+        }
+
         const { dashboard_id, ...updates } = args;
         const dashboard = await metabaseClient.updateDashboard(
           dashboard_id,
@@ -783,7 +793,7 @@ export function addDashboardTools(server: any, metabaseClient: MetabaseClient) {
   server.addTool({
     name: "update_dashboard_cards",
     description:
-      "⚠️ DANGER: REPLACES ALL dashboard cards - any cards not in the array will be DELETED. To update a single card, first get_dashboard to fetch ALL cards, then include ALL of them with your modifications. This affects ALL tabs.",
+      "Update card layout on a dashboard YOU created. You can only modify dashboards you own. To modify someone else's dashboard, use copy_dashboard first. ⚠️ DANGER: REPLACES ALL dashboard cards - any cards not in the array will be DELETED.",
     metadata: { isWrite: true },
     parameters: z.object({
       dashboard_id: z.number().describe("The ID of the dashboard"),
@@ -792,8 +802,8 @@ export function addDashboardTools(server: any, metabaseClient: MetabaseClient) {
           z
             .object({
               id: z.number().describe("Card ID"),
-              size_x: z.number().optional().describe("Width of the card"),
-              size_y: z.number().optional().describe("Height of the card"),
+              size_x: z.number().optional().describe("Width in grid columns (24 = full width, 12 = half width for side-by-side)"),
+              size_y: z.number().optional().describe("Height in grid rows (default 8)"),
               row: z.number().optional().describe("Row position"),
               col: z.number().optional().describe("Column position"),
               series: z
@@ -807,6 +817,16 @@ export function addDashboardTools(server: any, metabaseClient: MetabaseClient) {
     }).strict(),
     execute: async (args: { dashboard_id: number; cards: any[] }) => {
       try {
+        // Ownership check for update_dashboard_cards
+        const botUserId = parseInt(process.env.METABASE_BOT_USER_ID || '', 10);
+        if (!botUserId) {
+          throw new Error('METABASE_BOT_USER_ID not configured - cannot verify ownership');
+        }
+        const existingDashboard = await metabaseClient.getDashboard(args.dashboard_id);
+        if ((existingDashboard as any).creator_id !== botUserId) {
+          throw new Error(`Cannot modify dashboard ${args.dashboard_id}: owned by user ${(existingDashboard as any).creator_id}, not bot (${botUserId}). Use copy_dashboard first.`);
+        }
+
         const result = await metabaseClient.updateDashboardCards(
           args.dashboard_id,
           args.cards
@@ -1422,6 +1442,45 @@ export function addDashboardTools(server: any, metabaseClient: MetabaseClient) {
       } catch (error) {
         throw new Error(
           `Failed to audit dashboard ${args.dashboard_id}: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`
+        );
+      }
+    },
+  });
+
+  /**
+   * Resize or reposition a specific card on a dashboard
+   */
+  server.addTool({
+    name: "resize_dashboard_card",
+    description: "Resize or reposition a single card on a dashboard YOU own. Grid is 24 columns wide. Use size_x=24 for full width, size_x=12 for half width. For side-by-side: col=0 (left) and col=12 (right).",
+    metadata: { isWrite: true },
+    parameters: z.object({
+      dashboard_id: z.number().describe("The ID of the dashboard"),
+      card_id: z.number().describe("The card_id of the card to resize (from get_dashboard response)"),
+      size_x: z.number().optional().describe("New width in grid columns (24 = full, 12 = half, 8 = third)"),
+      size_y: z.number().optional().describe("New height in grid rows"),
+      row: z.number().optional().describe("New row position"),
+      col: z.number().optional().describe("New column position (0 = left, 12 = middle for half-width)"),
+    }).strict(),
+    execute: async (args: { dashboard_id: number; card_id: number; size_x?: number; size_y?: number; row?: number; col?: number }) => {
+      try {
+        const botUserId = parseInt(process.env.METABASE_BOT_USER_ID || '', 10);
+        if (!botUserId) {
+          throw new Error('METABASE_BOT_USER_ID not configured - cannot verify ownership');
+        }
+        const existingDashboard = await metabaseClient.getDashboard(args.dashboard_id);
+        if ((existingDashboard as any).creator_id !== botUserId) {
+          throw new Error(`Cannot modify dashboard ${args.dashboard_id}: owned by user ${(existingDashboard as any).creator_id}, not bot (${botUserId}). Use copy_dashboard first.`);
+        }
+
+        const { dashboard_id, card_id, ...updates } = args;
+        const result = await metabaseClient.resizeDashboardCard(dashboard_id, card_id, updates);
+        return JSON.stringify(result, null, 2);
+      } catch (error) {
+        throw new Error(
+          `Failed to resize card ${args.card_id} on dashboard ${args.dashboard_id}: ${
             error instanceof Error ? error.message : "Unknown error"
           }`
         );

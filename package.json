@@ -1,5 +1,5 @@
 {
-  "name": "@cognitionai/metabase-mcp-server",
+  "name": "querycurie-metabase-mcp-server",
   "version": "2.2.0",
   "description": "A Model Context Protocol server for Metabase integration",
   "author": "Cognition <devin@cognition.ai>",

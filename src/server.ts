@@ -24,6 +24,9 @@ const metabaseClient = new MetabaseClient(config);
 const server = new FastMCP({
   name: "metabase-server",
   version: "2.0.1",
+  // Disable roots to prevent crashes with supergateway stateless HTTP mode
+  // FastMCP tries to call roots/list on the client, but stateless HTTP can't route server-to-client requests
+  roots: { enabled: false },
 });
 
 // Override addTool to apply filtering

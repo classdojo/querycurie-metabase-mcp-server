@@ -54,6 +54,9 @@ export function addCardTools(server: any, metabaseClient: MetabaseClient) {
     execute: async (args: { card_id: number }) => {
       try {
         const card = await metabaseClient.getCard(args.card_id);
+        // Add URL to get_card response
+        const metabaseUrl = process.env.METABASE_URL || 'https://metabase.internal.classdojo.com';
+        (card as any).url = `${metabaseUrl}/question/${card.id}`;
         return JSON.stringify(card, null, 2);
       } catch (error) {
         throw new Error(
@@ -83,26 +86,146 @@ export function addCardTools(server: any, metabaseClient: MetabaseClient) {
     description: "Create a new Metabase card with custom query, visualization type, and settings - use this to programmatically build new analytical cards, dashboards charts, or data exploration queries",
     metadata: { isWrite: true },
     parameters: z.object({
-      name: z.string().describe("Card name"),
-      description: z.string().optional().describe("Description"),
-      dataset_query: z.unknown().optional().describe("Dataset query object - fully preserved including nested MBQL arrays"),
-      display: z.string().optional().describe("Visualization type"),
+      name: z.string().describe("Card name - a descriptive title for the saved question"),
+      description: z.string().optional().describe("Optional description explaining what this card analyzes"),
+      dataset_query: z.object({
+        database: z.number().optional().describe("Database ID (defaults to 2 = Redshift Analytics)"),
+        type: z.literal('native').optional().describe("Query type - use 'native' for SQL queries"),
+        native: z.object({
+          query: z.string().describe("The SQL query string, e.g., 'SELECT * FROM schema.table WHERE ...'"),
+          template_tags: z.record(z.any()).optional().describe("Template tags for parameterized queries (optional, defaults to {})")
+        }).describe("Native query object containing the SQL")
+      }).describe("REQUIRED: Query definition. Example: { database: 2, type: 'native', native: { query: 'SELECT ...' } }"),
+      display: z.string().optional().describe("Visualization type: 'table' (default), 'bar', 'line', 'pie', 'scalar', 'row', 'area', 'combo', 'pivot', 'smartscalar', 'progress', 'gauge', 'funnel', 'map'"),
       visualization_settings: z
         .object({})
         .passthrough()
         .optional()
-        .describe("Visualization settings"),
-      collection_id: z.number().optional().describe("Collection to save in"),
-      database_id: z.number().optional().describe("Database ID"),
-    }).strict(),
+        .describe("Chart-specific display settings (defaults to {})"),
+      collection_id: z.number().optional().describe("Collection ID to save card in (defaults to 1261 = DojoBot One-Offs)"),
+    }).passthrough(),
     execute: async (args: any) => {
       try {
-        const card = await metabaseClient.createCard(args);
+        /**
+         * Prepare card payload with validation, defaults, and normalization.
+         * Fixes issues where Claude generates invalid or incomplete payloads.
+         */
+        const prepareCardPayload = (input: any) => {
+          const payload = { ...input };
+
+          // 1. Validate dataset_query exists (required by Metabase)
+          if (!payload.dataset_query) {
+            throw new Error('dataset_query is required. Include database, type, and native.query fields.');
+          }
+
+          // 2. Ensure dataset_query has required fields
+          if (!payload.dataset_query.database) {
+            payload.dataset_query.database = 2; // Default to Redshift Analytics
+          }
+          if (!payload.dataset_query.type) {
+            payload.dataset_query.type = 'native'; // Default to native query
+          }
+
+          // 2b. Validate native query has actual SQL
+          if (payload.dataset_query.type === 'native') {
+            if (!payload.dataset_query.native) {
+              throw new Error('dataset_query.native is required for native queries. Include { native: { query: "SELECT ..." } }');
+            }
+            if (!payload.dataset_query.native.query || typeof payload.dataset_query.native.query !== 'string') {
+              throw new Error('dataset_query.native.query must be a non-empty SQL string. Got: ' + JSON.stringify(payload.dataset_query.native.query));
+            }
+          }
+
+          // 3. Normalize template-tags to template_tags (Claude uses hyphen sometimes)
+          if (payload.dataset_query.native && 'template-tags' in payload.dataset_query.native) {
+            payload.dataset_query.native.template_tags = payload.dataset_query.native['template-tags'];
+            delete payload.dataset_query.native['template-tags'];
+          }
+
+          // 4. Ensure template_tags exists for native queries (even if empty)
+          if (payload.dataset_query.type === 'native' && payload.dataset_query.native) {
+            payload.dataset_query.native.template_tags = payload.dataset_query.native.template_tags || {};
+          }
+
+          // 5. Default display to 'table' (required by Metabase)
+          if (!payload.display) {
+            payload.display = 'table';
+          }
+
+          // 6. Default visualization_settings to {} (Metabase expects a map)
+          if (!payload.visualization_settings) {
+            payload.visualization_settings = {};
+          }
+
+          // 7. Default collection_id to DojoBot One-Offs collection
+          if (!payload.collection_id) {
+            payload.collection_id = 1261;
+          }
+
+          // 8. Filter to only valid Metabase card fields (prevent LLM hallucinated fields)
+          const validFields = [
+            'name', 'description', 'dataset_query', 'display',
+            'visualization_settings', 'collection_id', 'collection_position',
+            'result_metadata', 'metadata_checksum', 'cache_ttl',
+            'parameters', 'parameter_mappings'
+          ];
+          const filteredPayload: any = {};
+          for (const field of validFields) {
+            if (payload[field] !== undefined) {
+              filteredPayload[field] = payload[field];
+            }
+          }
+
+          return filteredPayload;
+        };
+
+        const cardArgs = prepareCardPayload(args);
+
+        // Log the request payload for debugging
+        console.error('[create_card] Request payload:', JSON.stringify(cardArgs, null, 2));
+
+        const card = await metabaseClient.createCard(cardArgs);
+
+        // Log success
+        console.error('[create_card] Success! Card ID:', card.id);
+
+        // Add URL to response using METABASE_URL env var
+        const metabaseUrl = process.env.METABASE_URL || 'https://metabase.internal.classdojo.com';
+        (card as any).url = `${metabaseUrl}/question/${card.id}`;
+
         return JSON.stringify(card, null, 2);
-      } catch (error) {
-        throw new Error(
-          `Failed to create card: ${error instanceof Error ? error.message : "Unknown error"}`
-        );
+      } catch (error: any) {
+        // Log full error details for debugging
+        console.error('[create_card] ERROR:', error.message);
+        if (error.response) {
+          console.error('[create_card] Status:', error.response.status);
+          console.error('[create_card] Response:', JSON.stringify(error.response.data, null, 2));
+        }
+        if (error.config) {
+          console.error('[create_card] Request URL:', error.config.url);
+          console.error('[create_card] Request method:', error.config.method);
+        }
+
+        // Extract detailed error from Metabase API response
+        let errorMessage = 'Unknown error';
+        if (error instanceof Error) {
+          errorMessage = error.message;
+          // Check for axios error with response data
+          const axiosError = error as any;
+          if (axiosError.response?.data) {
+            const data = axiosError.response.data;
+            if (typeof data === 'string') {
+              errorMessage = data;
+            } else if (data.message) {
+              errorMessage = data.message;
+            } else if (data.errors) {
+              errorMessage = JSON.stringify(data.errors);
+            } else {
+              errorMessage = JSON.stringify(data);
+            }
+          }
+        }
+        throw new Error(`Failed to create card: ${errorMessage}`);
       }
     },
   });
@@ -121,11 +244,11 @@ export function addCardTools(server: any, metabaseClient: MetabaseClient) {
    */
   server.addTool({
     name: "update_card",
-    description: "Modify an existing Metabase card's name, description, query definition, visualization type, or settings - use this to fix broken cards, change chart types, update queries, or move cards between collections",
+    description: "Modify a card YOU created. You can only update cards you own (creator_id must match). To modify someone else's card, use get_card to read it, then create_card to make your own version.",
     metadata: { isWrite: true },
     parameters: z.object({
       card_id: z.number().describe("Card ID"),
-      updates: z.object({}).passthrough().describe("Fields to update"),
+      updates: z.object({}).passthrough().describe("Fields to update (name, description, dataset_query, display, visualization_settings, collection_id, etc.)"),
       query_params: z
         .object({})
         .passthrough()
@@ -138,11 +261,24 @@ export function addCardTools(server: any, metabaseClient: MetabaseClient) {
       query_params?: any;
     }) => {
       try {
+        // Ownership check for update_card
+        const botUserId = parseInt(process.env.METABASE_BOT_USER_ID || '', 10);
+        if (!botUserId) {
+          throw new Error('METABASE_BOT_USER_ID not configured - cannot verify ownership');
+        }
+        const existingCard = await metabaseClient.getCard(args.card_id);
+        if ((existingCard as any).creator_id !== botUserId) {
+          throw new Error(`Cannot modify card ${args.card_id}: owned by user ${(existingCard as any).creator_id}, not bot (${botUserId}). Use get_card then create_card to make your own copy.`);
+        }
+
         const card = await metabaseClient.updateCard(
           args.card_id,
           args.updates,
           args.query_params
         );
+        // Add URL to update_card response
+        const metabaseUrl = process.env.METABASE_URL || 'https://metabase.internal.classdojo.com';
+        (card as any).url = `${metabaseUrl}/question/${card.id}`;
         return JSON.stringify(card, null, 2);
       } catch (error) {
         throw new Error(
@@ -308,6 +444,9 @@ export function addCardTools(server: any, metabaseClient: MetabaseClient) {
     execute: async (args: { card_id: number }) => {
       try {
         const result = await metabaseClient.copyCard(args.card_id);
+        // Add URL to copy_card response
+        const metabaseUrl = process.env.METABASE_URL || 'https://metabase.internal.classdojo.com';
+        result.url = `${metabaseUrl}/question/${result.id}`;
         return JSON.stringify(result, null, 2);
       } catch (error) {
         throw new Error(

@@ -28,7 +28,7 @@ export class MetabaseClient {
       headers: {
         "Content-Type": "application/json",
       },
-      timeout: 30000, // 30 second timeout to prevent hanging requests
+      timeout: 600000, // 10 minute timeout for long-running queries
     });
 
     if (config.apiKey) {
@@ -210,7 +210,7 @@ export class MetabaseClient {
     const existingTabs = (dashboard as any).tabs || [];
     
     // Calculate default position for new card
-    const cardWidth = 12;
+    const cardWidth = 24; // Full width on Metabase's 24-column grid
     const cardHeight = 8;
 
     // Build the new dashcard - use id: -1 for new cards per Metabase convention
@@ -297,6 +297,24 @@ export class MetabaseClient {
     const response = await this.axiosInstance.put(`/api/dashboard/${dashboardId}`, {
       ...dashboard,
       dashcards: updatedDashcards
+    });
+    return response.data;
+  }
+
+  async resizeDashboardCard(dashboardId: number, cardId: number, updates: { size_x?: number; size_y?: number; row?: number; col?: number }): Promise<any> {
+    const dashboard = await this.getDashboard(dashboardId);
+    const dashcards = (dashboard as any).dashcards || [];
+    const idx = dashcards.findIndex((dc: any) => dc.card_id === cardId || dc.id === cardId);
+    if (idx === -1) {
+      throw new Error(`Card ${cardId} not found on dashboard ${dashboardId}. Available card_ids: ${dashcards.map((dc: any) => dc.card_id).join(', ')}`);
+    }
+    if (updates.size_x !== undefined) dashcards[idx].size_x = updates.size_x;
+    if (updates.size_y !== undefined) dashcards[idx].size_y = updates.size_y;
+    if (updates.row !== undefined) dashcards[idx].row = updates.row;
+    if (updates.col !== undefined) dashcards[idx].col = updates.col;
+    const response = await this.axiosInstance.put(`/api/dashboard/${dashboardId}`, {
+      ...dashboard,
+      dashcards
     });
     return response.data;
   }

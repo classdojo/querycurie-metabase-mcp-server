@@ -203,7 +203,7 @@ export function addAdditionalTools(server: any, metabaseClient: MetabaseClient) 
    */
   server.addTool({
     name: "update_collection",
-    description: "Update collection properties including name, description, and organization - use this to maintain metadata, reorganize hierarchies, or update structure",
+    description: "Update a collection YOU created. You can only modify collections you own.",
     metadata: { isWrite: true },
     parameters: z.object({
       collection_id: z.number().describe("The ID of the collection to update"),
@@ -214,6 +214,18 @@ export function addAdditionalTools(server: any, metabaseClient: MetabaseClient) 
     }).strict(),
     execute: async (args: { collection_id: number; name?: string; description?: string; parent_id?: number; color?: string }) => {
       try {
+        // Ownership check for update_collection
+        const botUserId = parseInt(process.env.METABASE_BOT_USER_ID || '', 10);
+        if (!botUserId) {
+          throw new Error('METABASE_BOT_USER_ID not configured - cannot verify ownership');
+        }
+        const existingCollection = await metabaseClient.getCollection(args.collection_id);
+        // Collections can use personal_owner_id for personal collections
+        const ownerId = (existingCollection as any).personal_owner_id || (existingCollection as any).creator_id;
+        if (ownerId && ownerId !== botUserId) {
+          throw new Error(`Cannot modify collection ${args.collection_id}: owned by user ${ownerId}, not bot (${botUserId}).`);
+        }
+
         const { collection_id, ...updates } = args;
         const collection = await metabaseClient.updateCollection(collection_id, updates);
         return JSON.stringify(collection, null, 2);
@@ -303,6 +315,7 @@ export function addAdditionalTools(server: any, metabaseClient: MetabaseClient) 
       try {
         const payload = {
           dataset_query: {
+            database: 2, // Default to Redshift Analytics
             type: "native",
             native: {
               template_tags: {},
@@ -316,11 +329,7 @@ export function addAdditionalTools(server: any, metabaseClient: MetabaseClient) 
         };
 
         const queryB64 = Buffer.from(JSON.stringify(payload)).toString('base64');
-        const metabaseUrl = process.env.METABASE_PLAYGROUND_URL || process.env.METABASE_URL;
-        
-        if (!metabaseUrl) {
-          throw new Error("METABASE_URL environment variable is required");
-        }
+        const metabaseUrl = process.env.METABASE_PLAYGROUND_URL || process.env.METABASE_URL || 'https://metabase.internal.classdojo.com';
 
         const playgroundUrl = `${metabaseUrl}/question#${queryB64}`;
 
