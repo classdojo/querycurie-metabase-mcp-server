@@ -1221,4 +1221,119 @@ export function addDashboardTools(server, metabaseClient) {
             }
         },
     });
+    /**
+     * Arrange 2 or 3 cards into a row using a layout template
+     *
+     * Repositions the specified cards into a single row on the dashboard without
+     * affecting any other cards. Supports predefined layout templates for common
+     * arrangements.
+     */
+    server.addTool({
+        name: "arrange_dashboard_cards",
+        description: "Arrange 2 or 3 cards into a row using a layout template on a dashboard YOU own. Templates: '2-wide' (two 12-wide cards), '3-equal' (three 8-wide), '3-narrow-wide-wide' (6,9,9), '3-wide-wide-narrow' (9,9,6). Does NOT move other cards.",
+        metadata: { isWrite: true },
+        parameters: z.object({
+            dashboard_id: z.number().describe("The ID of the dashboard"),
+            card_ids: z.array(z.number()).min(2).max(3).describe("Array of 2 or 3 card_ids to arrange (from get_dashboard response dashcards[].card_id)"),
+            template: z.enum(["2-wide", "3-equal", "3-narrow-wide-wide", "3-wide-wide-narrow"]).describe("Layout template: '2-wide' = 12,12; '3-equal' = 8,8,8; '3-narrow-wide-wide' = 6,9,9; '3-wide-wide-narrow' = 9,9,6"),
+            row: z.number().optional().describe("Row to place the cards at (auto-calculated after last card if omitted)"),
+            height: z.number().optional().default(8).describe("Height of each card in grid rows (default 8)"),
+        }).strict(),
+        execute: async (args) => {
+            try {
+                const botUserId = parseInt(process.env.METABASE_BOT_USER_ID || '', 10);
+                if (!botUserId) {
+                    throw new Error('METABASE_BOT_USER_ID not configured - cannot verify ownership');
+                }
+                const dashboard = await metabaseClient.getDashboard(args.dashboard_id);
+                if (dashboard.creator_id !== botUserId) {
+                    throw new Error(`Cannot modify dashboard ${args.dashboard_id}: owned by user ${dashboard.creator_id}, not bot (${botUserId}). Use copy_dashboard first.`);
+                }
+                const dashcards = dashboard.dashcards || [];
+                const height = args.height ?? 8;
+                // Define layout templates: array of { size_x, col } for each card position
+                const templates = {
+                    '2-wide': [
+                        { size_x: 12, col: 0 },
+                        { size_x: 12, col: 12 },
+                    ],
+                    '3-equal': [
+                        { size_x: 8, col: 0 },
+                        { size_x: 8, col: 8 },
+                        { size_x: 8, col: 16 },
+                    ],
+                    '3-narrow-wide-wide': [
+                        { size_x: 6, col: 0 },
+                        { size_x: 9, col: 6 },
+                        { size_x: 9, col: 15 },
+                    ],
+                    '3-wide-wide-narrow': [
+                        { size_x: 9, col: 0 },
+                        { size_x: 9, col: 9 },
+                        { size_x: 6, col: 18 },
+                    ],
+                };
+                const layout = templates[args.template];
+                if (!layout) {
+                    throw new Error(`Unknown template: ${args.template}`);
+                }
+                if (args.card_ids.length !== layout.length) {
+                    throw new Error(`Template '${args.template}' requires ${layout.length} cards, but ${args.card_ids.length} were provided`);
+                }
+                // Calculate row: if not specified, place after the last existing card
+                let targetRow = args.row ?? 0;
+                if (args.row === undefined) {
+                    for (const dc of dashcards) {
+                        const bottomEdge = (dc.row || 0) + (dc.size_y || 8);
+                        if (bottomEdge > targetRow) {
+                            targetRow = bottomEdge;
+                        }
+                    }
+                }
+                // Find the dashcards matching the requested card_ids and apply layout
+                const updatedDashcards = dashcards.map((dc) => {
+                    const idx = args.card_ids.indexOf(dc.card_id);
+                    if (idx !== -1) {
+                        return {
+                            ...dc,
+                            size_x: layout[idx].size_x,
+                            size_y: height,
+                            col: layout[idx].col,
+                            row: targetRow,
+                        };
+                    }
+                    return dc;
+                });
+                // Verify all requested cards were found
+                const foundIds = dashcards.filter((dc) => args.card_ids.includes(dc.card_id)).map((dc) => dc.card_id);
+                const missingIds = args.card_ids.filter((id) => !foundIds.includes(id));
+                if (missingIds.length > 0) {
+                    const available = dashcards.map((dc) => dc.card_id).join(', ');
+                    throw new Error(`Cards not found on dashboard: ${missingIds.join(', ')}. Available card_ids: ${available}`);
+                }
+                // Clean dashcards for PUT (remove read-only nested objects)
+                const cleanedDashcards = updatedDashcards.map((dc) => {
+                    const { card, ...rest } = dc;
+                    return rest;
+                });
+                const response = await metabaseClient.updateDashboardCards(args.dashboard_id, cleanedDashcards);
+                return JSON.stringify({
+                    dashboard_id: args.dashboard_id,
+                    template: args.template,
+                    row: targetRow,
+                    cards: args.card_ids.map((id, i) => ({
+                        card_id: id,
+                        size_x: layout[i].size_x,
+                        size_y: height,
+                        col: layout[i].col,
+                        row: targetRow,
+                    })),
+                    status: 'success',
+                }, null, 2);
+            }
+            catch (error) {
+                throw new Error(`Failed to arrange cards on dashboard ${args.dashboard_id}: ${error instanceof Error ? error.message : "Unknown error"}`);
+            }
+        },
+    });
 }
