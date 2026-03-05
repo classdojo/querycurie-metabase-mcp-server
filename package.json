@@ -28,7 +28,7 @@
   "type": "module",
   "main": "./dist/server.js",
   "bin": {
-    "metabase-mcp-server": "./dist/server.js"
+    "querycurie-metabase-mcp-server": "./dist/server.js"
   },
   "files": [
     "dist",
