@@ -37,6 +37,7 @@
   ],
   "scripts": {
     "build": "tsc && node -e \"require('fs').chmodSync('build/server.js', '755')\" && mkdir -p dist && cp -r build/* dist/",
+    "prepare": "npm run build",
     "watch": "tsc --watch",
     "inspector": "npm run build && npx fastmcp inspect dist/server.js",
     "start": "npm run build && node dist/server.js",
