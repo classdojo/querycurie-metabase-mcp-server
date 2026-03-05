@@ -66,27 +66,12 @@ export class MetabaseClient {
 
   }
 
-  private logInfo(message: string, data?: unknown) {
-    const logMessage = {
-      timestamp: new Date().toISOString(),
-      level: "info",
-      message,
-      data,
-    };
-    console.error(JSON.stringify(logMessage));
+  private logInfo(message: string, _data?: unknown) {
     console.error(`INFO: ${message}`);
   }
 
   private logError(message: string, error: unknown) {
     const errorObj = error as Error;
-    const logMessage = {
-      timestamp: new Date().toISOString(),
-      level: "error",
-      message,
-      error: errorObj.message || "Unknown error",
-      stack: errorObj.stack,
-    };
-    console.error(JSON.stringify(logMessage));
     console.error(`ERROR: ${message} - ${errorObj.message || "Unknown error"}`);
   }
 

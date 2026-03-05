@@ -42,26 +42,11 @@ export class MetabaseClient {
             return Promise.reject(error);
         });
     }
-    logInfo(message, data) {
-        const logMessage = {
-            timestamp: new Date().toISOString(),
-            level: "info",
-            message,
-            data,
-        };
-        console.error(JSON.stringify(logMessage));
+    logInfo(message, _data) {
         console.error(`INFO: ${message}`);
     }
     logError(message, error) {
         const errorObj = error;
-        const logMessage = {
-            timestamp: new Date().toISOString(),
-            level: "error",
-            message,
-            error: errorObj.message || "Unknown error",
-            stack: errorObj.stack,
-        };
-        console.error(JSON.stringify(logMessage));
         console.error(`ERROR: ${message} - ${errorObj.message || "Unknown error"}`);
     }
     /**

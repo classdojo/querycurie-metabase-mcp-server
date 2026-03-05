@@ -181,13 +181,7 @@ export function addCardTools(server: any, metabaseClient: MetabaseClient) {
 
         const cardArgs = prepareCardPayload(args);
 
-        // Log the request payload for debugging
-        console.error('[create_card] Request payload:', JSON.stringify(cardArgs, null, 2));
-
         const card = await metabaseClient.createCard(cardArgs);
-
-        // Log success
-        console.error('[create_card] Success! Card ID:', card.id);
 
         // Add URL to response using METABASE_URL env var
         const metabaseUrl = process.env.METABASE_URL || 'https://metabase.internal.classdojo.com';
@@ -195,17 +189,6 @@ export function addCardTools(server: any, metabaseClient: MetabaseClient) {
 
         return JSON.stringify(card, null, 2);
       } catch (error: any) {
-        // Log full error details for debugging
-        console.error('[create_card] ERROR:', error.message);
-        if (error.response) {
-          console.error('[create_card] Status:', error.response.status);
-          console.error('[create_card] Response:', JSON.stringify(error.response.data, null, 2));
-        }
-        if (error.config) {
-          console.error('[create_card] Request URL:', error.config.url);
-          console.error('[create_card] Request method:', error.config.method);
-        }
-
         // Extract detailed error from Metabase API response
         let errorMessage = 'Unknown error';
         if (error instanceof Error) {
