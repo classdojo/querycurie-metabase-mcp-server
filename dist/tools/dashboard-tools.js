@@ -653,7 +653,7 @@ export function addDashboardTools(server, metabaseClient) {
                 .object({
                 id: z.number().describe("Card ID"),
                 size_x: z.number().optional().describe("Width in grid columns (24 = full width, 12 = half width for side-by-side)"),
-                size_y: z.number().optional().describe("Height in grid rows (default 8)"),
+                size_y: z.number().optional().describe("Height in grid rows (default 8 unless otherwise requested)"),
                 row: z.number().optional().describe("Row position"),
                 col: z.number().optional().describe("Column position"),
                 series: z
@@ -905,8 +905,8 @@ export function addDashboardTools(server, metabaseClient) {
                 visualization_settings: z.object({}).passthrough().optional().describe("Visualization settings"),
                 row: z.number().optional().describe("Row position"),
                 col: z.number().optional().describe("Column position"),
-                size_x: z.number().optional().describe("Width of the card"),
-                size_y: z.number().optional().describe("Height of the card"),
+                size_x: z.number().optional().describe("Width in grid columns (24 = full, 12 = half)"),
+                size_y: z.number().optional().describe("Height in grid rows (default 8 unless otherwise requested)"),
             }).passthrough().describe("Properties to update on the dashcard"),
         }).strict(),
         execute: async (args) => {
@@ -1198,7 +1198,7 @@ export function addDashboardTools(server, metabaseClient) {
             dashboard_id: z.number().describe("The ID of the dashboard"),
             card_id: z.number().describe("The card_id of the card to resize (from get_dashboard response)"),
             size_x: z.number().optional().describe("New width in grid columns (24 = full, 12 = half, 8 = third)"),
-            size_y: z.number().optional().describe("New height in grid rows"),
+            size_y: z.number().optional().describe("New height in grid rows (default 8 unless otherwise requested)"),
             row: z.number().optional().describe("New row position"),
             col: z.number().optional().describe("New column position (0 = left, 12 = middle for half-width)"),
         }).strict(),
