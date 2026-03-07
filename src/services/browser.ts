@@ -303,47 +303,91 @@ async function waitForLoaded(page: any, timeoutMs = 30000): Promise<void> {
 }
 
 /**
+ * Find the scrollable dashboard container.
+ * Metabase renders dashboards inside a <main> element with overflow: auto,
+ * not on document.body. Returns the container's scrollHeight and clientHeight,
+ * or null if no scrollable container is found.
+ */
+async function findScrollContainer(page: any): Promise<{
+  scrollHeight: number;
+  clientHeight: number;
+} | null> {
+  return page.evaluate(() => {
+    // Metabase uses <main> as the scrollable dashboard container
+    const main = document.querySelector("main");
+    if (main && main.scrollHeight > main.clientHeight + 50) {
+      return {
+        scrollHeight: main.scrollHeight,
+        clientHeight: main.clientHeight,
+      };
+    }
+    // Fallback: check document body
+    const doc = document.documentElement;
+    if (doc.scrollHeight > doc.clientHeight + 50) {
+      return {
+        scrollHeight: doc.scrollHeight,
+        clientHeight: doc.clientHeight,
+      };
+    }
+    return null;
+  });
+}
+
+/**
+ * Scroll the dashboard container to a specific Y position.
+ * Tries <main> first (Metabase's scrollable container), falls back to window.
+ */
+async function scrollDashboard(page: any, y: number): Promise<void> {
+  await page.evaluate((scrollY: number) => {
+    const main = document.querySelector("main");
+    if (main && main.scrollHeight > main.clientHeight + 50) {
+      main.scrollTop = scrollY;
+    } else {
+      window.scrollTo(0, scrollY);
+    }
+  }, y);
+}
+
+/**
  * Scroll through a dashboard page and capture viewport-sized screenshots.
- * At each scroll position, waits for lazy-loaded cards to finish rendering.
+ * Scrolls the <main> container (not window), waits for lazy-loaded cards.
  */
 async function captureDashboardScreenshots(
   page: any,
   viewportHeight: number
 ): Promise<Buffer[]> {
-  const totalHeight: number = await page.evaluate(
-    () => document.documentElement.scrollHeight
-  );
+  const container = await findScrollContainer(page);
 
-  // If it fits in one viewport, just take one screenshot
-  if (totalHeight <= viewportHeight * 1.1) {
+  // If no scrollable content, just take one screenshot
+  if (!container || container.scrollHeight <= container.clientHeight * 1.1) {
     const screenshot = await page.screenshot({ type: "png" });
     return [screenshot];
   }
 
-  // First pass: scroll through the entire page to trigger lazy loading
-  // and wait for each section to finish rendering
+  const { scrollHeight, clientHeight } = container;
+
+  // First pass: scroll through to trigger lazy loading
   let scrollY = 0;
-  while (scrollY < totalHeight) {
-    await page.evaluate((y: number) => window.scrollTo(0, y), scrollY);
+  while (scrollY < scrollHeight) {
+    await scrollDashboard(page, scrollY);
     await waitForLoaded(page, 15000);
-    scrollY += viewportHeight;
+    scrollY += clientHeight;
   }
 
   // Re-measure in case content grew after lazy loading
-  const finalHeight: number = await page.evaluate(
-    () => document.documentElement.scrollHeight
-  );
+  const updated = await findScrollContainer(page);
+  const finalHeight = updated?.scrollHeight ?? scrollHeight;
+  const stepHeight = updated?.clientHeight ?? clientHeight;
 
   // Second pass: scroll back through and capture screenshots
   const screenshots: Buffer[] = [];
   scrollY = 0;
   while (scrollY < finalHeight) {
-    await page.evaluate((y: number) => window.scrollTo(0, y), scrollY);
-    // Brief settle for scroll position
-    await page.waitForTimeout(300);
+    await scrollDashboard(page, scrollY);
+    await page.waitForTimeout(500);
     const screenshot = await page.screenshot({ type: "png" });
     screenshots.push(screenshot);
-    scrollY += viewportHeight;
+    scrollY += stepHeight;
   }
 
   return screenshots;
