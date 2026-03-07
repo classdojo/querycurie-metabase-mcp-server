@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { tryScreenshotDashboard } from "../services/browser.js";
 export function addDashboardTools(server, metabaseClient) {
     /**
      * List all available dashboards
@@ -39,11 +40,21 @@ export function addDashboardTools(server, metabaseClient) {
         metadata: { isEssential: true, isRead: true },
         parameters: z.object({
             dashboard_id: z.number().describe("The ID of the dashboard to retrieve"),
+            include_screenshot: z.boolean().optional().describe("Include a full-page PNG screenshot of the dashboard (default false)"),
         }).strict(),
         execute: async (args) => {
             try {
-                const dashboard = await metabaseClient.getDashboard(args.dashboard_id);
-                return JSON.stringify(dashboard, null, 2);
+                const [dashboard, screenshotBase64] = await Promise.all([
+                    metabaseClient.getDashboard(args.dashboard_id),
+                    args.include_screenshot ? tryScreenshotDashboard(args.dashboard_id) : Promise.resolve(null),
+                ]);
+                const content = [
+                    { type: "text", text: JSON.stringify(dashboard, null, 2) },
+                ];
+                if (screenshotBase64) {
+                    content.push({ type: "image", data: screenshotBase64, mimeType: "image/png" });
+                }
+                return { content };
             }
             catch (error) {
                 throw new Error(`Failed to fetch dashboard ${args.dashboard_id}: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -212,11 +223,21 @@ export function addDashboardTools(server, metabaseClient) {
                 .number()
                 .optional()
                 .describe("Position within the collection"),
+            include_screenshot: z.boolean().optional().describe("Include a PNG screenshot of the new dashboard (default false)"),
         }).strict(),
         execute: async (args) => {
             try {
                 const dashboard = await metabaseClient.createDashboard(args);
-                return JSON.stringify(dashboard, null, 2);
+                const screenshotBase64 = args.include_screenshot
+                    ? await tryScreenshotDashboard(dashboard.id)
+                    : null;
+                const content = [
+                    { type: "text", text: JSON.stringify(dashboard, null, 2) },
+                ];
+                if (screenshotBase64) {
+                    content.push({ type: "image", data: screenshotBase64, mimeType: "image/png" });
+                }
+                return { content };
             }
             catch (error) {
                 throw new Error(`Failed to create dashboard: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -604,6 +625,7 @@ export function addDashboardTools(server, metabaseClient) {
                 .optional()
                 .describe("Embedding parameters"),
             position: z.number().optional().describe("Dashboard position"),
+            include_screenshot: z.boolean().optional().describe("Include a full-page PNG screenshot of the updated dashboard (default false)"),
         }).strict(),
         execute: async (args) => {
             try {
@@ -616,9 +638,18 @@ export function addDashboardTools(server, metabaseClient) {
                 if (existingDashboard.creator_id !== botUserId) {
                     throw new Error(`Cannot modify dashboard ${args.dashboard_id}: owned by user ${existingDashboard.creator_id}, not bot (${botUserId}). Use copy_dashboard to make your own copy.`);
                 }
-                const { dashboard_id, ...updates } = args;
+                const { dashboard_id, include_screenshot, ...updates } = args;
                 const dashboard = await metabaseClient.updateDashboard(dashboard_id, updates);
-                return JSON.stringify(dashboard, null, 2);
+                const screenshotBase64 = include_screenshot
+                    ? await tryScreenshotDashboard(dashboard_id)
+                    : null;
+                const content = [
+                    { type: "text", text: JSON.stringify(dashboard, null, 2) },
+                ];
+                if (screenshotBase64) {
+                    content.push({ type: "image", data: screenshotBase64, mimeType: "image/png" });
+                }
+                return { content };
             }
             catch (error) {
                 throw new Error(`Failed to update dashboard ${args.dashboard_id}: ${error instanceof Error ? error.message : "Unknown error"}`);

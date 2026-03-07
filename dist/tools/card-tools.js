@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { tryScreenshotCard } from "../services/browser.js";
 export function addCardTools(server, metabaseClient) {
     /**
      * List all available Metabase cards
@@ -45,14 +46,23 @@ export function addCardTools(server, metabaseClient) {
         metadata: { isEssential: true, isRead: true },
         parameters: z.object({
             card_id: z.number().describe("Card ID"),
+            include_screenshot: z.boolean().optional().describe("Include a PNG screenshot of the card visualization (default false)"),
         }).strict(),
         execute: async (args) => {
             try {
                 const card = await metabaseClient.getCard(args.card_id);
-                // Add URL to get_card response
                 const metabaseUrl = process.env.METABASE_URL || 'https://metabase.internal.classdojo.com';
                 card.url = `${metabaseUrl}/question/${card.id}`;
-                return JSON.stringify(card, null, 2);
+                const screenshotBase64 = args.include_screenshot
+                    ? await tryScreenshotCard(args.card_id)
+                    : null;
+                const content = [
+                    { type: "text", text: JSON.stringify(card, null, 2) },
+                ];
+                if (screenshotBase64) {
+                    content.push({ type: "image", data: screenshotBase64, mimeType: "image/png" });
+                }
+                return { content };
             }
             catch (error) {
                 throw new Error(`Failed to get card ${args.card_id}: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -166,7 +176,20 @@ export function addCardTools(server, metabaseClient) {
                 // Add URL to response using METABASE_URL env var
                 const metabaseUrl = process.env.METABASE_URL || 'https://metabase.internal.classdojo.com';
                 card.url = `${metabaseUrl}/question/${card.id}`;
-                return JSON.stringify(card, null, 2);
+                const screenshotBase64 = args.include_screenshot
+                    ? await tryScreenshotCard(card.id)
+                    : null;
+                const content = [
+                    { type: "text", text: JSON.stringify(card, null, 2) },
+                ];
+                if (screenshotBase64) {
+                    content.push({
+                        type: "image",
+                        data: screenshotBase64,
+                        mimeType: "image/png",
+                    });
+                }
+                return { content };
             }
             catch (error) {
                 // Extract detailed error from Metabase API response
@@ -219,6 +242,7 @@ export function addCardTools(server, metabaseClient) {
                 .passthrough()
                 .optional()
                 .describe("Optional query parameters for update"),
+            include_screenshot: z.boolean().optional().describe("Include a PNG screenshot of the updated card (default false)"),
         }).strict(),
         execute: async (args) => {
             try {
@@ -232,10 +256,18 @@ export function addCardTools(server, metabaseClient) {
                     throw new Error(`Cannot modify card ${args.card_id}: owned by user ${existingCard.creator_id}, not bot (${botUserId}). Use get_card then create_card to make your own copy.`);
                 }
                 const card = await metabaseClient.updateCard(args.card_id, args.updates, args.query_params);
-                // Add URL to update_card response
                 const metabaseUrl = process.env.METABASE_URL || 'https://metabase.internal.classdojo.com';
                 card.url = `${metabaseUrl}/question/${card.id}`;
-                return JSON.stringify(card, null, 2);
+                const screenshotBase64 = args.include_screenshot
+                    ? await tryScreenshotCard(args.card_id)
+                    : null;
+                const content = [
+                    { type: "text", text: JSON.stringify(card, null, 2) },
+                ];
+                if (screenshotBase64) {
+                    content.push({ type: "image", data: screenshotBase64, mimeType: "image/png" });
+                }
+                return { content };
             }
             catch (error) {
                 throw new Error(`Failed to update card ${args.card_id}: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -307,15 +339,29 @@ export function addCardTools(server, metabaseClient) {
                 .number()
                 .optional()
                 .describe("Execute within a dashboard context"),
+            include_screenshot: z.boolean().optional().describe("Include a PNG screenshot of the card visualization (default false)"),
         }).strict(),
         execute: async (args) => {
             try {
-                const result = await metabaseClient.executeCard(args.card_id, {
-                    ignore_cache: args.ignore_cache,
-                    collection_preview: args.collection_preview,
-                    dashboard_id: args.dashboard_id,
-                });
-                return JSON.stringify(result, null, 2);
+                const [result, screenshotBase64] = await Promise.all([
+                    metabaseClient.executeCard(args.card_id, {
+                        ignore_cache: args.ignore_cache,
+                        collection_preview: args.collection_preview,
+                        dashboard_id: args.dashboard_id,
+                    }),
+                    args.include_screenshot ? tryScreenshotCard(args.card_id) : Promise.resolve(null),
+                ]);
+                const content = [
+                    { type: "text", text: JSON.stringify(result, null, 2) },
+                ];
+                if (screenshotBase64) {
+                    content.push({
+                        type: "image",
+                        data: screenshotBase64,
+                        mimeType: "image/png",
+                    });
+                }
+                return { content };
             }
             catch (error) {
                 throw new Error(`Failed to execute card ${args.card_id}: ${error instanceof Error ? error.message : "Unknown error"}`);
