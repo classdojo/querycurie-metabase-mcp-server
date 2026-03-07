@@ -238,7 +238,7 @@ export async function takeScreenshot(
       // Dismiss any modals/overlays
       await dismissModals(page);
 
-      // Wait for visualization to render
+      // Wait for visualization container to appear
       const selector =
         resourceType === "question"
           ? ".CardVisualization, .QueryVisualization"
@@ -248,8 +248,8 @@ export async function takeScreenshot(
         // Fallback: visualization selector not found, proceed with what's rendered
       });
 
-      // Settle delay for chart animations
-      await page.waitForTimeout(2000);
+      // Wait for all loading indicators to disappear
+      await waitForLoaded(page);
 
       if (resourceType === "question") {
         const screenshot = await page.screenshot({ type: "png" });
@@ -272,8 +272,39 @@ export async function takeScreenshot(
 }
 
 /**
+ * Wait for Metabase loading indicators to disappear.
+ * Polls until no spinners/skeletons are visible, or timeout.
+ */
+async function waitForLoaded(page: any, timeoutMs = 30000): Promise<void> {
+  const loadingSelectors = [
+    ".Loading",
+    ".LoadingSpinner",
+    ".loading-spinner",
+    '[data-testid="loading-spinner"]',
+    ".CardVisualization--loading",
+    ".DashCard .Loading",
+    ".skeleton",
+  ].join(", ");
+
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const loadingCount: number = await page.evaluate((sel: string) => {
+      return document.querySelectorAll(sel).length;
+    }, loadingSelectors);
+
+    if (loadingCount === 0) {
+      // Brief settle for animations after loading completes
+      await page.waitForTimeout(1000);
+      return;
+    }
+    await page.waitForTimeout(500);
+  }
+  // Timeout — proceed with whatever is rendered
+}
+
+/**
  * Scroll through a dashboard page and capture viewport-sized screenshots.
- * Scrolls incrementally to trigger lazy-loaded card rendering.
+ * At each scroll position, waits for lazy-loaded cards to finish rendering.
  */
 async function captureDashboardScreenshots(
   page: any,
@@ -290,15 +321,13 @@ async function captureDashboardScreenshots(
   }
 
   // First pass: scroll through the entire page to trigger lazy loading
+  // and wait for each section to finish rendering
   let scrollY = 0;
   while (scrollY < totalHeight) {
     await page.evaluate((y: number) => window.scrollTo(0, y), scrollY);
-    await page.waitForTimeout(800);
+    await waitForLoaded(page, 15000);
     scrollY += viewportHeight;
   }
-
-  // Wait for any final renders after scrolling
-  await page.waitForTimeout(1500);
 
   // Re-measure in case content grew after lazy loading
   const finalHeight: number = await page.evaluate(
@@ -310,7 +339,8 @@ async function captureDashboardScreenshots(
   scrollY = 0;
   while (scrollY < finalHeight) {
     await page.evaluate((y: number) => window.scrollTo(0, y), scrollY);
-    await page.waitForTimeout(500);
+    // Brief settle for scroll position
+    await page.waitForTimeout(300);
     const screenshot = await page.screenshot({ type: "png" });
     screenshots.push(screenshot);
     scrollY += viewportHeight;
