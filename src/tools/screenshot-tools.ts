@@ -20,9 +20,6 @@ export function addScreenshotTools(
 
   /**
    * Screenshot a Metabase card (saved question)
-   *
-   * Captures a PNG screenshot of a card's visualization by logging in
-   * with session-cookie auth and navigating to the card URL.
    */
   server.addTool({
     name: "screenshot_card",
@@ -48,7 +45,7 @@ export function addScreenshotTools(
       height?: number;
     }) => {
       try {
-        const screenshot = await takeScreenshot({
+        const screenshots = await takeScreenshot({
           metabaseUrl,
           username: username!,
           password: password!,
@@ -59,13 +56,11 @@ export function addScreenshotTools(
         });
 
         return {
-          content: [
-            {
-              type: "image" as const,
-              data: screenshot.toString("base64"),
-              mimeType: "image/png",
-            },
-          ],
+          content: screenshots.map((buf) => ({
+            type: "image" as const,
+            data: buf.toString("base64"),
+            mimeType: "image/png",
+          })),
         };
       } catch (error) {
         throw new Error(
@@ -78,13 +73,13 @@ export function addScreenshotTools(
   /**
    * Screenshot a Metabase dashboard
    *
-   * Captures a full-page PNG screenshot of a dashboard by logging in
-   * with session-cookie auth and navigating to the dashboard URL.
+   * For long dashboards, scrolls through the page and returns multiple
+   * viewport-sized screenshots to capture all content.
    */
   server.addTool({
     name: "screenshot_dashboard",
     description:
-      "Take a full-page PNG screenshot of a Metabase dashboard — use this to visually inspect dashboard layout, verify card arrangement, or see what a dashboard looks like",
+      "Take PNG screenshot(s) of a Metabase dashboard — scrolls through long dashboards and returns multiple images. Use this to visually inspect dashboard layout, verify card arrangement, or see what a dashboard looks like",
     metadata: { isRead: true },
     parameters: z
       .object({
@@ -105,7 +100,7 @@ export function addScreenshotTools(
       height?: number;
     }) => {
       try {
-        const screenshot = await takeScreenshot({
+        const screenshots = await takeScreenshot({
           metabaseUrl,
           username: username!,
           password: password!,
@@ -116,13 +111,11 @@ export function addScreenshotTools(
         });
 
         return {
-          content: [
-            {
-              type: "image" as const,
-              data: screenshot.toString("base64"),
-              mimeType: "image/png",
-            },
-          ],
+          content: screenshots.map((buf) => ({
+            type: "image" as const,
+            data: buf.toString("base64"),
+            mimeType: "image/png",
+          })),
         };
       } catch (error) {
         throw new Error(

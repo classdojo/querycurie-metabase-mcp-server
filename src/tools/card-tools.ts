@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { MetabaseClient } from "../client/metabase-client.js";
-import { tryScreenshotCard } from "../services/browser.js";
+import { tryScreenshotCard, screenshotsToContent } from "../services/browser.js";
 
 export function addCardTools(server: any, metabaseClient: MetabaseClient) {
 
@@ -65,10 +65,8 @@ export function addCardTools(server: any, metabaseClient: MetabaseClient) {
 
         const content: any[] = [
           { type: "text", text: JSON.stringify(card, null, 2) },
+          ...screenshotsToContent(screenshotBase64),
         ];
-        if (screenshotBase64) {
-          content.push({ type: "image", data: screenshotBase64, mimeType: "image/png" });
-        }
         return { content };
       } catch (error) {
         throw new Error(
@@ -296,10 +294,8 @@ export function addCardTools(server: any, metabaseClient: MetabaseClient) {
 
         const content: any[] = [
           { type: "text", text: JSON.stringify(card, null, 2) },
+          ...screenshotsToContent(screenshotBase64),
         ];
-        if (screenshotBase64) {
-          content.push({ type: "image", data: screenshotBase64, mimeType: "image/png" });
-        }
         return { content };
       } catch (error) {
         throw new Error(
@@ -401,14 +397,8 @@ export function addCardTools(server: any, metabaseClient: MetabaseClient) {
 
         const content: any[] = [
           { type: "text", text: JSON.stringify(result, null, 2) },
+          ...screenshotsToContent(screenshotBase64),
         ];
-        if (screenshotBase64) {
-          content.push({
-            type: "image",
-            data: screenshotBase64,
-            mimeType: "image/png",
-          });
-        }
         return { content };
       } catch (error) {
         throw new Error(

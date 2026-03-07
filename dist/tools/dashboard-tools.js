@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { tryScreenshotDashboard } from "../services/browser.js";
+import { tryScreenshotDashboard, screenshotsToContent } from "../services/browser.js";
 export function addDashboardTools(server, metabaseClient) {
     /**
      * List all available dashboards
@@ -51,9 +51,7 @@ export function addDashboardTools(server, metabaseClient) {
                 const content = [
                     { type: "text", text: JSON.stringify(dashboard, null, 2) },
                 ];
-                if (screenshotBase64) {
-                    content.push({ type: "image", data: screenshotBase64, mimeType: "image/png" });
-                }
+                content.push(...screenshotsToContent(screenshotBase64));
                 return { content };
             }
             catch (error) {
@@ -234,9 +232,7 @@ export function addDashboardTools(server, metabaseClient) {
                 const content = [
                     { type: "text", text: JSON.stringify(dashboard, null, 2) },
                 ];
-                if (screenshotBase64) {
-                    content.push({ type: "image", data: screenshotBase64, mimeType: "image/png" });
-                }
+                content.push(...screenshotsToContent(screenshotBase64));
                 return { content };
             }
             catch (error) {
@@ -646,9 +642,7 @@ export function addDashboardTools(server, metabaseClient) {
                 const content = [
                     { type: "text", text: JSON.stringify(dashboard, null, 2) },
                 ];
-                if (screenshotBase64) {
-                    content.push({ type: "image", data: screenshotBase64, mimeType: "image/png" });
-                }
+                content.push(...screenshotsToContent(screenshotBase64));
                 return { content };
             }
             catch (error) {

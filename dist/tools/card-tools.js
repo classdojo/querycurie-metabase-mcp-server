@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { tryScreenshotCard } from "../services/browser.js";
+import { tryScreenshotCard, screenshotsToContent } from "../services/browser.js";
 export function addCardTools(server, metabaseClient) {
     /**
      * List all available Metabase cards
@@ -58,10 +58,8 @@ export function addCardTools(server, metabaseClient) {
                     : null;
                 const content = [
                     { type: "text", text: JSON.stringify(card, null, 2) },
+                    ...screenshotsToContent(screenshotBase64),
                 ];
-                if (screenshotBase64) {
-                    content.push({ type: "image", data: screenshotBase64, mimeType: "image/png" });
-                }
                 return { content };
             }
             catch (error) {
@@ -263,10 +261,8 @@ export function addCardTools(server, metabaseClient) {
                     : null;
                 const content = [
                     { type: "text", text: JSON.stringify(card, null, 2) },
+                    ...screenshotsToContent(screenshotBase64),
                 ];
-                if (screenshotBase64) {
-                    content.push({ type: "image", data: screenshotBase64, mimeType: "image/png" });
-                }
                 return { content };
             }
             catch (error) {
@@ -353,14 +349,8 @@ export function addCardTools(server, metabaseClient) {
                 ]);
                 const content = [
                     { type: "text", text: JSON.stringify(result, null, 2) },
+                    ...screenshotsToContent(screenshotBase64),
                 ];
-                if (screenshotBase64) {
-                    content.push({
-                        type: "image",
-                        data: screenshotBase64,
-                        mimeType: "image/png",
-                    });
-                }
                 return { content };
             }
             catch (error) {

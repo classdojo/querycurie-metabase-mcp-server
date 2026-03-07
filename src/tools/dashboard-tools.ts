@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { MetabaseClient } from "../client/metabase-client.js";
-import { tryScreenshotDashboard } from "../services/browser.js";
+import { tryScreenshotDashboard, screenshotsToContent } from "../services/browser.js";
 
 export function addDashboardTools(server: any, metabaseClient: MetabaseClient) {
   /**
@@ -59,9 +59,7 @@ export function addDashboardTools(server: any, metabaseClient: MetabaseClient) {
         const content: any[] = [
           { type: "text", text: JSON.stringify(dashboard, null, 2) },
         ];
-        if (screenshotBase64) {
-          content.push({ type: "image", data: screenshotBase64, mimeType: "image/png" });
-        }
+        content.push(...screenshotsToContent(screenshotBase64));
         return { content };
       } catch (error) {
         throw new Error(
@@ -283,9 +281,7 @@ export function addDashboardTools(server: any, metabaseClient: MetabaseClient) {
         const content: any[] = [
           { type: "text", text: JSON.stringify(dashboard, null, 2) },
         ];
-        if (screenshotBase64) {
-          content.push({ type: "image", data: screenshotBase64, mimeType: "image/png" });
-        }
+        content.push(...screenshotsToContent(screenshotBase64));
         return { content };
       } catch (error) {
         throw new Error(
@@ -793,9 +789,7 @@ export function addDashboardTools(server: any, metabaseClient: MetabaseClient) {
         const content: any[] = [
           { type: "text", text: JSON.stringify(dashboard, null, 2) },
         ];
-        if (screenshotBase64) {
-          content.push({ type: "image", data: screenshotBase64, mimeType: "image/png" });
-        }
+        content.push(...screenshotsToContent(screenshotBase64));
         return { content };
       } catch (error) {
         throw new Error(

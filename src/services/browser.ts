@@ -184,13 +184,14 @@ interface ScreenshotOptions {
 }
 
 /**
- * Take a screenshot of a Metabase question or dashboard.
- * Logs in via the Metabase UI on first call, reuses the session,
- * and re-authenticates automatically if the session expires.
+ * Take screenshot(s) of a Metabase question or dashboard.
+ * For questions: returns a single screenshot.
+ * For dashboards: scrolls through the page to trigger lazy loading,
+ * then captures viewport-sized screenshots at each scroll position.
  */
 export async function takeScreenshot(
   options: ScreenshotOptions
-): Promise<Buffer> {
+): Promise<Buffer[]> {
   const {
     metabaseUrl,
     username,
@@ -250,15 +251,15 @@ export async function takeScreenshot(
       // Settle delay for chart animations
       await page.waitForTimeout(2000);
 
-      const screenshot = await page.screenshot({
-        type: "png",
-        fullPage: resourceType === "dashboard",
-      });
+      if (resourceType === "question") {
+        const screenshot = await page.screenshot({ type: "png" });
+        return [screenshot];
+      }
 
-      return screenshot;
+      // Dashboard: scroll through to trigger lazy loading, then capture each viewport
+      return await captureDashboardScreenshots(page, height);
     } catch (error) {
       await page.close().catch(() => {});
-      // On first attempt, tear down everything and retry with a fresh browser
       if (attempt === 0) {
         await closeBrowser();
         continue;
@@ -271,13 +272,61 @@ export async function takeScreenshot(
 }
 
 /**
- * Try to take a screenshot. Returns base64 PNG string, or null if
- * screenshots aren't configured or the screenshot fails. Never throws.
+ * Scroll through a dashboard page and capture viewport-sized screenshots.
+ * Scrolls incrementally to trigger lazy-loaded card rendering.
  */
-async function tryScreenshot(
+async function captureDashboardScreenshots(
+  page: any,
+  viewportHeight: number
+): Promise<Buffer[]> {
+  const totalHeight: number = await page.evaluate(
+    () => document.documentElement.scrollHeight
+  );
+
+  // If it fits in one viewport, just take one screenshot
+  if (totalHeight <= viewportHeight * 1.1) {
+    const screenshot = await page.screenshot({ type: "png" });
+    return [screenshot];
+  }
+
+  // First pass: scroll through the entire page to trigger lazy loading
+  let scrollY = 0;
+  while (scrollY < totalHeight) {
+    await page.evaluate((y: number) => window.scrollTo(0, y), scrollY);
+    await page.waitForTimeout(800);
+    scrollY += viewportHeight;
+  }
+
+  // Wait for any final renders after scrolling
+  await page.waitForTimeout(1500);
+
+  // Re-measure in case content grew after lazy loading
+  const finalHeight: number = await page.evaluate(
+    () => document.documentElement.scrollHeight
+  );
+
+  // Second pass: scroll back through and capture screenshots
+  const screenshots: Buffer[] = [];
+  scrollY = 0;
+  while (scrollY < finalHeight) {
+    await page.evaluate((y: number) => window.scrollTo(0, y), scrollY);
+    await page.waitForTimeout(500);
+    const screenshot = await page.screenshot({ type: "png" });
+    screenshots.push(screenshot);
+    scrollY += viewportHeight;
+  }
+
+  return screenshots;
+}
+
+/**
+ * Try to take screenshot(s). Returns base64 PNG strings, or null if
+ * screenshots aren't configured or capture fails. Never throws.
+ */
+async function tryScreenshots(
   resourceType: "question" | "dashboard",
   resourceId: number
-): Promise<string | null> {
+): Promise<string[] | null> {
   const metabaseUrl =
     process.env.METABASE_URL || "https://metabase.internal.classdojo.com";
   const username = process.env.METABASE_USERNAME;
@@ -285,23 +334,35 @@ async function tryScreenshot(
   if (!username || !password) return null;
 
   try {
-    const buf = await takeScreenshot({
+    const buffers = await takeScreenshot({
       metabaseUrl,
       username,
       password,
       resourceType,
       resourceId,
     });
-    return buf.toString("base64");
+    return buffers.map((b) => b.toString("base64"));
   } catch {
     return null;
   }
 }
 
-export function tryScreenshotCard(cardId: number): Promise<string | null> {
-  return tryScreenshot("question", cardId);
+/** Single screenshot for a card. Returns [base64] or null. */
+export function tryScreenshotCard(cardId: number): Promise<string[] | null> {
+  return tryScreenshots("question", cardId);
 }
 
-export function tryScreenshotDashboard(dashboardId: number): Promise<string | null> {
-  return tryScreenshot("dashboard", dashboardId);
+/** One or more screenshots for a dashboard (scrolls if needed). Returns [base64, ...] or null. */
+export function tryScreenshotDashboard(dashboardId: number): Promise<string[] | null> {
+  return tryScreenshots("dashboard", dashboardId);
+}
+
+/** Convert screenshot base64 strings to MCP image content blocks. */
+export function screenshotsToContent(screenshots: string[] | null): any[] {
+  if (!screenshots) return [];
+  return screenshots.map((data) => ({
+    type: "image",
+    data,
+    mimeType: "image/png",
+  }));
 }
