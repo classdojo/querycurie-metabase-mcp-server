@@ -84,11 +84,11 @@ export function addCardTools(server, metabaseClient) {
      */
     server.addTool({
         name: "create_card",
-        description: "Create a new Metabase card with custom query, visualization type, and settings - use this to programmatically build new analytical cards, dashboards charts, or data exploration queries",
+        description: "Create a new Metabase card with custom query, visualization type, and settings - use this to programmatically build new analytical cards, dashboards charts, or data exploration queries. description is required. SQL should include comments before each CTE explaining what it does.",
         metadata: { isWrite: true },
         parameters: z.object({
             name: z.string().describe("Card name - a descriptive title for the saved question"),
-            description: z.string().optional().describe("Optional description explaining what this card analyzes"),
+            description: z.string().describe("What the user asked and the approach/how the SQL works"),
             dataset_query: z.object({
                 database: z.number().optional().describe("Database ID (defaults to 2 = Redshift Analytics)"),
                 type: z.literal('native').optional().describe("Query type - use 'native' for SQL queries"),
@@ -252,6 +252,10 @@ export function addCardTools(server, metabaseClient) {
                 const existingCard = await metabaseClient.getCard(args.card_id);
                 if (existingCard.creator_id !== botUserId) {
                     throw new Error(`Cannot modify card ${args.card_id}: owned by user ${existingCard.creator_id}, not bot (${botUserId}). Use get_card then create_card to make your own copy.`);
+                }
+                // When updating SQL, require an updated description too
+                if (args.updates?.dataset_query && !args.updates?.description?.trim()) {
+                    throw new Error('When updating a card\'s SQL, also provide an updated description reflecting the new query.');
                 }
                 const card = await metabaseClient.updateCard(args.card_id, args.updates, args.query_params);
                 const metabaseUrl = process.env.METABASE_URL || 'https://metabase.internal.classdojo.com';
